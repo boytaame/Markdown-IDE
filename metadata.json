@@ -1,0 +1,5 @@
+{
+  "name": "Markdown IDE",
+  "description": "A web-based IDE for creating and editing Markdown files, featuring a file explorer, a code editor with a minimap, and a live preview pane.",
+  "requestFramePermissions": []
+}
