@@ -1,8 +1,10 @@
+// --- START OF FILE LoginScreen.tsx --- (UPDATED)
 
 import React from 'react';
 
 interface LoginScreenProps {
   onLogin: () => void;
+  isLoading: boolean; // NEW: Add a prop to track the loading state
 }
 
 const GoogleIcon: React.FC = () => (
@@ -14,7 +16,15 @@ const GoogleIcon: React.FC = () => (
   </svg>
 );
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
+// NEW: A simple spinner icon for the loading state
+const SpinnerIcon: React.FC = () => (
+    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+);
+
+const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, isLoading }) => {
   return (
     <div className="flex items-center justify-center h-screen bg-primary">
       <div className="text-center p-12 bg-secondary rounded-lg shadow-2xl max-w-md w-full">
@@ -22,13 +32,15 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         <p className="text-text-secondary mb-8">Your personal space for Markdown.</p>
         <button
           onClick={onLogin}
-          className="w-full flex items-center justify-center bg-gray-100 text-gray-700 font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-gray-200 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-50"
+          disabled={isLoading} // NEW: Disable button when loading
+          className="w-full flex items-center justify-center bg-gray-100 text-gray-700 font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-gray-200 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed" // NEW: Add disabled styles
         >
-          <GoogleIcon />
-          Sign in with Google
+          {isLoading ? <SpinnerIcon /> : <GoogleIcon />} 
+          {isLoading ? 'Signing in...' : 'Sign in with Google'} 
         </button>
+        {/* CHANGED: Text updated to reflect real Google login */}
         <p className="text-xs text-gray-500 mt-6">
-          Login is for demonstration purposes. No data is sent to Google.
+          You will be redirected to the official Google sign-in page.
         </p>
       </div>
     </div>

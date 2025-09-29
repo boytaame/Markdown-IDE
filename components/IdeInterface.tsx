@@ -1,20 +1,63 @@
-
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { MarkdownFile } from '../types';
 import FileExplorer from './FileExplorer';
 import Editor from './Editor';
 import Preview from './Preview';
 import Toolbar from './Toolbar';
-import { v4 as uuidv4 } from 'uuid'; // Simple uuid, in a real app use a library
+import { v4 as uuidv4 } from 'uuid';
+
+// Storage key for persisting editor state
+const STORAGE_KEY = 'markdown-ide-state';
+
+type PersistedState = {
+  files: MarkdownFile[];
+  activeFileId: string | null;
+};
 
 const IdeInterface: React.FC = () => {
-  const [files, setFiles] = useState<MarkdownFile[]>([
-    { id: '1', name: 'welcome.md', content: '# Welcome to Markdown IDE!\n\nThis is a simple markdown editor.\n\n- Create new files\n- Import local files\n- Save your work\n\nEnjoy!' },
-  ]);
-  const [activeFileId, setActiveFileId] = useState<string | null>('1');
-  const [isPreviewVisible, setIsPreviewVisible] = useState(true);
+  const [files, setFiles] = useState<MarkdownFile[]>([]);
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const [isPreviewVisible, setIsPreviewVisible] = useState(false);
 
   const activeFile = files.find(file => file.id === activeFileId);
+
+  // Load from localStorage on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed: PersistedState = JSON.parse(raw);
+        if (Array.isArray(parsed.files) && parsed.files.length > 0) {
+          setFiles(parsed.files);
+          setActiveFileId(parsed.activeFileId ?? parsed.files[0]?.id ?? null);
+          return;
+        }
+      }
+    } catch (_) {
+      // ignore parse errors and fall back to default
+    }
+    // Fallback to default welcome file
+    const defaultFile: MarkdownFile = {
+      id: '1',
+      name: 'welcome.md',
+      content:
+        '# Welcome to Markdown IDE!\n\nThis is a simple markdown editor.\n\n- Create new files\n- Import local files\n- Save your work\n\nEnjoy!',
+    };
+    setFiles([defaultFile]);
+    setActiveFileId(defaultFile.id);
+  }, []);
+
+  // Persist to localStorage whenever files or active file changes
+  useEffect(() => {
+    const state: PersistedState = { files, activeFileId };
+    if (files.length > 0) { // Only save if there's something to save
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch (_) {
+          // storage may be unavailable (private mode); ignore
+        }
+    }
+  }, [files, activeFileId]);
 
   const updateActiveFileContent = useCallback((content: string) => {
     setFiles(currentFiles =>
@@ -53,7 +96,7 @@ const IdeInterface: React.FC = () => {
     } else {
         alert("Please select a valid .md file.");
     }
-  };
+  }; 
   
   const handleSaveFile = () => {
     if (!activeFile) return;
@@ -76,6 +119,35 @@ const IdeInterface: React.FC = () => {
     });
   };
 
+  const handleDownloadAll = async () => {
+    try {
+      const anyWindow: any = window as any;
+      if (anyWindow.showDirectoryPicker) {
+        const dirHandle = await anyWindow.showDirectoryPicker({ mode: 'readwrite' });
+        for (const f of files) {
+          const fileHandle = await dirHandle.getFileHandle(f.name, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(new Blob([f.content], { type: 'text/markdown;charset=utf-8' }));
+          await writable.close();
+        }
+        alert('All files have been saved to the selected directory.');
+        return;
+      }
+    } catch (err) {
+      if ((err as any)?.name === 'AbortError') return;
+    }
+
+    for (const f of files) {
+      const blob = new Blob([f.content], { type: 'text/markdown;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = f.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen font-mono bg-primary">
       <Toolbar 
@@ -95,13 +167,12 @@ const IdeInterface: React.FC = () => {
         />
         {activeFile ? (
           <div className="flex-1 flex bg-gray-700 overflow-hidden">
-            <div className={isPreviewVisible ? 'w-1/2' : 'w-full'}>
-              <Editor file={activeFile} onContentChange={updateActiveFileContent} />
-            </div>
-            {isPreviewVisible && (
-              <div className="w-1/2 border-l border-gray-600">
+            {isPreviewVisible ? (
+              <div className="w-full h-full overflow-y-auto">
                 <Preview content={activeFile.content} />
               </div>
+            ) : (
+              <Editor file={activeFile} onContentChange={updateActiveFileContent} />
             )}
           </div>
         ) : (
@@ -109,11 +180,19 @@ const IdeInterface: React.FC = () => {
                 <p>Select a file to start editing or create a new one.</p>
             </div>
         )}
+        <button
+          onClick={handleDownloadAll}
+          className="fixed bottom-2 left-2 bg-primary text-white shadow-lg hover:shadow-xl transition-shadow px-1 flex items-center gap-1"
+          title="Download all files"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4" />
+          </svg>
+          <span className="hidden sm:inline">Download All</span>
+        </button>
       </div>
     </div>
   );
 };
-
-
 
 export default IdeInterface;
