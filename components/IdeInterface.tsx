@@ -1,63 +1,128 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { MarkdownFile } from '../types';
 import FileExplorer from './FileExplorer';
 import Editor from './Editor';
 import Preview from './Preview';
 import Toolbar from './Toolbar';
+import Tabs from './Tabs';
 import { v4 as uuidv4 } from 'uuid';
 
-// Storage key for persisting editor state
 const STORAGE_KEY = 'markdown-ide-state';
+const MIN_SIDEBAR_WIDTH = 200; // Minimum width for the sidebar
+const MAX_SIDEBAR_WIDTH = 500; // Maximum width for the sidebar
 
 type PersistedState = {
   files: MarkdownFile[];
+  openFileIds: string[];
   activeFileId: string | null;
+  sidebarWidth?: number;
+  sidebarVisible?: boolean;
 };
 
 const IdeInterface: React.FC = () => {
   const [files, setFiles] = useState<MarkdownFile[]>([]);
+  const [openFileIds, setOpenFileIds] = useState<string[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(256); // Default width
+  const [isResizing, setIsResizing] = useState(false);
+  const [sidebarVisible, setSidebarVisible] = useState(true); 
+  const sidebarRef = useRef<HTMLDivElement>(null);
 
+  const openFiles = openFileIds.map(id => files.find(f => f.id === id)).filter((f): f is MarkdownFile => !!f);
   const activeFile = files.find(file => file.id === activeFileId);
 
-  // Load from localStorage on mount
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed: PersistedState = JSON.parse(raw);
         if (Array.isArray(parsed.files) && parsed.files.length > 0) {
-          setFiles(parsed.files);
-          setActiveFileId(parsed.activeFileId ?? parsed.files[0]?.id ?? null);
+          const loadedFiles = parsed.files.map(f => ({ ...f, pinned: f.pinned ?? false }));
+          setFiles(loadedFiles);
+          const fileIds = loadedFiles.map(f => f.id);
+          const validOpenFileIds = parsed.openFileIds?.filter(id => fileIds.includes(id)) ?? [];
+          setOpenFileIds(validOpenFileIds);
+          setActiveFileId(parsed.activeFileId ?? validOpenFileIds[0] ?? null);
+          setSidebarWidth(parsed.sidebarWidth ?? 256);
+          setSidebarVisible(parsed.sidebarVisible ?? true);
           return;
         }
       }
     } catch (_) {
-      // ignore parse errors and fall back to default
+      // Fallback to default state
     }
-    // Fallback to default welcome file
     const defaultFile: MarkdownFile = {
       id: '1',
       name: 'welcome.md',
-      content:
-        '# Welcome to Markdown IDE!\n\nThis is a simple markdown editor.\n\n- Create new files\n- Import local files\n- Save your work\n\nEnjoy!',
+      content: '# Welcome to your Markdown IDE!\n\nStart typing...\n',
+      pinned: false,
     };
     setFiles([defaultFile]);
+    setOpenFileIds([defaultFile.id]);
     setActiveFileId(defaultFile.id);
   }, []);
 
-  // Persist to localStorage whenever files or active file changes
   useEffect(() => {
-    const state: PersistedState = { files, activeFileId };
-    if (files.length > 0) { // Only save if there's something to save
+    const state: PersistedState = { files, openFileIds, activeFileId, sidebarWidth, sidebarVisible };
+    if (files.length > 0) {
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
         } catch (_) {
-          // storage may be unavailable (private mode); ignore
+          // Storage may be unavailable
         }
     }
-  }, [files, activeFileId]);
+  }, [files, openFileIds, activeFileId, sidebarWidth, sidebarVisible]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  const handleMouseUp = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (isResizing && sidebarRef.current) {
+      const newWidth = e.clientX - sidebarRef.current.getBoundingClientRect().left;
+      if (newWidth < MIN_SIDEBAR_WIDTH / 2) {
+        setSidebarVisible(false);
+      } else {
+        setSidebarVisible(true);
+        setSidebarWidth(Math.max(MIN_SIDEBAR_WIDTH, Math.min(newWidth, MAX_SIDEBAR_WIDTH)));
+      }
+    }
+  }, [isResizing]);
+
+  useEffect(() => {
+    if(isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, handleMouseMove, handleMouseUp]);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarVisible(prev => !prev);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+        if (event.ctrlKey && event.key === 'b') {
+            event.preventDefault();
+            toggleSidebar();
+        }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [toggleSidebar]);
+
 
   const updateActiveFileContent = useCallback((content: string) => {
     setFiles(currentFiles =>
@@ -67,15 +132,32 @@ const IdeInterface: React.FC = () => {
     );
   }, [activeFileId]);
 
+  const handleSelectFile = (id: string) => {
+    if (!openFileIds.includes(id)) {
+      setOpenFileIds(prev => [...prev, id]);
+    }
+    setActiveFileId(id);
+  };
+
+  const handleCloseFile = (id: string) => {
+    const newOpenFileIds = openFileIds.filter(fileId => fileId !== id);
+    setOpenFileIds(newOpenFileIds);
+    if (activeFileId === id) {
+      const newActiveFileId = newOpenFileIds.length > 0 ? newOpenFileIds[0] : null;
+      setActiveFileId(newActiveFileId);
+    }
+  };
+
   const handleCreateFile = () => {
     const newFileName = `new-file-${files.length + 1}.md`;
     const newFile: MarkdownFile = {
       id: uuidv4(),
       name: newFileName,
       content: `# ${newFileName}\n`,
+      pinned: false,
     };
     setFiles(prevFiles => [...prevFiles, newFile]);
-    setActiveFileId(newFile.id);
+    handleSelectFile(newFile.id);
   };
 
   const handleImportFile = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -88,9 +170,10 @@ const IdeInterface: React.FC = () => {
           id: uuidv4(),
           name: file.name,
           content,
+          pinned: false,
         };
         setFiles(prevFiles => [...prevFiles, newFile]);
-        setActiveFileId(newFile.id);
+        handleSelectFile(newFile.id);
       };
       reader.readAsText(file);
     } else {
@@ -117,6 +200,27 @@ const IdeInterface: React.FC = () => {
         }
         return newFiles;
     });
+    setOpenFileIds(prev => prev.filter(id => id !== fileId));
+  };
+
+  const handleRenameFile = (fileId: string, newName: string) => {
+    setFiles(prevFiles =>
+      prevFiles.map(f => (f.id === fileId ? { ...f, name: newName } : f))
+    );
+  };
+
+  const handleReorderFiles = (reorderedFiles: MarkdownFile[]) => {
+    setFiles(reorderedFiles);
+  };
+
+  const handleReorderTabs = (reorderedIds: string[]) => {
+    setOpenFileIds(reorderedIds);
+  };
+
+  const handleTogglePin = (fileId: string) => {
+    setFiles(prevFiles =>
+      prevFiles.map(f => (f.id === fileId ? { ...f, pinned: !f.pinned } : f))
+    );
   };
 
   const handleDownloadAll = async () => {
@@ -159,27 +263,44 @@ const IdeInterface: React.FC = () => {
         activeFileName={activeFile?.name}
       />
       <div className="flex flex-1 overflow-hidden">
-        <FileExplorer 
-          files={files} 
-          activeFileId={activeFileId} 
-          onSelectFile={setActiveFileId}
-          onDeleteFile={handleDeleteFile}
-        />
-        {activeFile ? (
-          <div className="flex-1 flex bg-gray-700 overflow-hidden">
-            {isPreviewVisible ? (
-              <div className="w-full h-full overflow-y-auto">
-                <Preview content={activeFile.content} />
-              </div>
-            ) : (
-              <Editor file={activeFile} onContentChange={updateActiveFileContent} />
-            )}
+        {sidebarVisible && (
+          <div ref={sidebarRef} style={{ width: sidebarWidth }} className="flex-shrink-0">
+            <FileExplorer 
+              files={files} 
+              activeFileId={activeFileId} 
+              onSelectFile={handleSelectFile}
+              onDeleteFile={handleDeleteFile}
+              onRenameFile={handleRenameFile}
+              onReorderFiles={handleReorderFiles}
+              onTogglePin={handleTogglePin}
+            />
           </div>
-        ) : (
-            <div className="flex-1 flex items-center justify-center bg-secondary text-text-secondary">
-                <p>Select a file to start editing or create a new one.</p>
-            </div>
         )}
+        <div onMouseDown={handleMouseDown} className="w-1 cursor-col-resize bg-gray-700 hover:bg-accent transition-colors" />
+        <div className="flex-1 flex flex-col bg-gray-700 overflow-hidden">
+          <Tabs
+            openFiles={openFiles}
+            activeFileId={activeFileId}
+            onSelectFile={setActiveFileId}
+            onCloseFile={handleCloseFile}
+            onReorderTabs={handleReorderTabs}
+          />
+          {activeFile ? (
+            <div className="flex-1 flex bg-gray-700 overflow-hidden">
+              {isPreviewVisible ? (
+                <div className="w-full h-full overflow-y-auto">
+                  <Preview content={activeFile.content} />
+                </div>
+              ) : (
+                <Editor file={activeFile} onContentChange={updateActiveFileContent} />
+              )}
+            </div>
+          ) : (
+              <div className="flex-1 flex items-center justify-center bg-secondary text-text-secondary">
+                  <p>Select a file to start editing or create a new one.</p>
+              </div>
+          )}
+        </div>
         <button
           onClick={handleDownloadAll}
           className="fixed bottom-2 left-2 bg-primary text-white shadow-lg hover:shadow-xl transition-shadow px-1 flex items-center gap-1"

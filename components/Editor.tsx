@@ -58,13 +58,15 @@ const highlightLine = (line: string): string => {
       const color = lightenColor(colors.headings, (level - 1) * 15);
       return `<span style="color: ${color};">${hashes}</span> ${content}`;
     })
-    .replace(/^(&gt;.*)/g, `<span style="color: ${colors.blockquote};">$&</span>`)
+    .replace(/^(\s*)(&gt;.*)/g, (_, indent: string, content: string) => {
+        return `${indent}<span style="color: ${colors.blockquote};">${content}</span>`;
+    })
     .replace(/^(\s*)([\*\-\+]|\d+\.)\s/gm, (_, indent, marker) => `${indent}<span style="color: ${colors.lists};">${marker}</span> `)
     .replace(/^(---|___|\*\*\*)$/gm, `<span style="color: ${colors.horizontalRules};">$&</span>`)
     .replace(/!\[(.*?)\]\((.*?)\)/g, `<span style="color: ${colors.images.exclamationMark};">!</span><span style="color: ${colors.images.altText};">[</span><span style="color: ${colors.images.altText};">${'[$1]'}</span><span style="color: ${colors.images.altText};">]</span><span>($2)</span>`.replace('[$1]', '$1'))
     .replace(/\[(.*?)\]\((.*?)\)/g, `<span style="color: ${colors.links};">[$1]($2)</span>`)
     .replace(/(\*\*|__)(.*?)\1/g, `<span style="color: ${colors.bold}; font-weight: bold;">$1$2$1</span>`)
-    .replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, `<span style="color: ${colors.italic}; font-style: italic;">*$1*</span>`)
+    .replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, `<span style="color: ${colors.italic}; font-style: italic;">*S1*</span>`)
     .replace(/_(.*?)_/g, `<span style="color: ${colors.italic}; font-style: italic;">_$1_</span>`)
     .replace(/~~(.*?)~~/g, `<span style="color: ${colors.strikethrough}; text-decoration: line-through;">~~$1~~</span>`)
     .replace(/`(.*?)`/g, `<span style="color: ${colors.code};"> \`$1\`</span>`)
@@ -133,6 +135,72 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
     wordBreak: 'break-word',
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab' && editorRef.current) {
+        e.preventDefault();
+        const { selectionStart, selectionEnd, value } = editorRef.current;
+        const lines = value.substring(0, selectionStart).split('\n');
+        const currentLineNumber = lines.length - 1;
+        const selection = value.substring(selectionStart, selectionEnd);
+        const selectedLines = selection.split('\n');
+
+        if (selectedLines.length > 1) {
+            // Multi-line indent/un-indent
+            const allLines = value.split('\n');
+            let newSelectionStart = selectionStart;
+            let newSelectionEnd = selectionEnd;
+
+            if (e.shiftKey) {
+                // Un-indent
+                for (let i = 0; i < selectedLines.length; i++) {
+                    const lineIndex = currentLineNumber + i;
+                    if (allLines[lineIndex].startsWith('\t')) {
+                        allLines[lineIndex] = allLines[lineIndex].substring(1);
+                        if (i === 0) newSelectionStart--;
+                        newSelectionEnd--;
+                    } else if (allLines[lineIndex].startsWith('  ')) {
+                        allLines[lineIndex] = allLines[lineIndex].substring(2);
+                        if (i === 0) newSelectionStart -= 2;
+                        newSelectionEnd -= 2;
+                    }
+                }
+            } else {
+                // Indent
+                for (let i = 0; i < selectedLines.length; i++) {
+                    const lineIndex = currentLineNumber + i;
+                    allLines[lineIndex] = '\t' + allLines[lineIndex];
+                    if (i === 0) newSelectionStart++;
+                    newSelectionEnd++;
+                }
+            }
+            const newValue = allLines.join('\n');
+            onContentChange(newValue);
+
+            // Restore selection
+            setTimeout(() => {
+                if(editorRef.current) {
+                    editorRef.current.selectionStart = newSelectionStart;
+                    editorRef.current.selectionEnd = newSelectionEnd;
+                }
+            }, 0);
+
+        } else {
+            // Single-line indent
+            const newValue =
+                value.substring(0, selectionStart) +
+                '\t' +
+                value.substring(selectionEnd);
+            onContentChange(newValue);
+            
+            setTimeout(() => {
+                if(editorRef.current) {
+                    editorRef.current.selectionStart = editorRef.current.selectionEnd = selectionStart + 1;
+                }
+            }, 0);
+        }
+    }
+  };
+
   const GUTTER_WIDTH = '3.5rem';
   const CODE_PADDING_LEFT = '1rem';
   const END_PADDING = '22.5rem';
@@ -145,7 +213,8 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
           value={file.content}
           onChange={(e) => onContentChange(e.target.value)}
           onScroll={handleEditorScroll}
-          className="absolute inset-0 resize-none focus:outline-none bg-transparent text-transparent caret-text-primary w-full h-full"
+          onKeyDown={handleKeyDown}
+          className="absolute inset-0 resize-none focus:outline-none bg-transparent text-transparent caret-text-primary w-full h-full z-10"
           style={{
             ...commonStyles,
             paddingLeft: `calc(${GUTTER_WIDTH} + ${CODE_PADDING_LEFT})`,
