@@ -46,18 +46,7 @@ const lightenColor = (hex: string, percent: number): string => {
   return `#${newR}${newG}${newB}`;
 };
 
-const highlightLine = (
-  line: string,
-  lineNumber: number,
-  cursorLine: number
-): string => {
-  if (lineNumber !== cursorLine && line.includes('$check')) {
-    return line.replace(/\\$check\\[( |x)\\]/g, (match) => {
-      const isChecked = match === '$check[x]';
-      return `<input type="checkbox" ${isChecked ? 'checked' : ''} style="margin-right: 6px; transform: translateY(2px);" />`;
-    });
-  }
-
+const highlightLine = (line: string): string => {
   return line
     .replace(/^(#{1,6})\\s(.*)/g, (_, hashes: string, content: string) => {
       const level = hashes.length;
@@ -69,14 +58,15 @@ const highlightLine = (
     })
     .replace(/^(\\s*)([\\*\\-\\+]|\\d+\\.)\\s/gm, (_, indent, marker) => `${indent}<span style="color: ${colors.lists};">${marker}</span> `)
     .replace(/^(---|___|\\*\\*\\*)$/gm, `<span style="color: ${colors.horizontalRules};">$&</span>`)
-    .replace(/!\\[(.*?)\\]\\((.*?)\\)/g, `<span style="color: ${colors.images.exclamationMark};">!</span><span style="color: ${colors.images.altText};">[</span><span style="color: ${colors.images.altText};">${'[$1]'}</span><span style="color: ${colors.images.altText};">]</span><span>($2)</span>`.replace('[$1]', '$1'))
-    .replace(/\\[(.*?)\\]\\((.*?)\\)/g, `<span style="color: ${colors.links};">[$1]($2)</span>`)
+    .replace(/!\\\[(.*?)\\\]\\\((.*?)\\\)/g, `<span style="color: ${colors.images.exclamationMark};">!</span><span style="color: ${colors.images.altText};">[</span>$1<span style="color: ${colors.images.altText};">]</span><span>($2)</span>`)
+    .replace(/\\\[(.*?)\\\]\\\((.*?)\\\)/g, `<span style="color: ${colors.links};">[$1]($2)</span>`)
     .replace(/(\\*\\*|__)(.*?)\\1/g, `<span style="color: ${colors.bold}; font-weight: bold;">$1$2$1</span>`)
-    .replace(/(?<!\\*)\\*(?!\\*)(.*?)(?<!\\*)\\*(?!\\*)/g, `<span style="color: ${colors.italic}; font-style: italic;">*S1*</span>`)
+    .replace(/(?<!\\*)\\*(?!\\*)(.*?)(?<!\\*)\\*(?!\\*)/g, `<span style="color: ${colors.italic}; font-style: italic;">*$1*</span>`)
     .replace(/_(.*?)_/g, `<span style="color: ${colors.italic}; font-style: italic;">_$1_</span>`)
     .replace(/~~(.*?)~~/g, `<span style="color: ${colors.strikethrough}; text-decoration: line-through;">~~$1~~</span>`)
-    .replace(/`(.*?)`/g, `<span style="color: ${colors.code};"> \`$1\`</span>`)
-    .replace(/(<\\/?[\\w\\s="\\/.'\\:;#-?&]+>)/g, `<span style="color:${colors.htmlTags};">$&</span>`);
+    .replace(/\\`(.*?)\\`/g, `<span style="color: ${colors.code};"> \`$1\`</span>`)
+    .replace(/(<\/?[a-zA-Z][\w\s="'\/.:;#-]*>)/g,`<span style="color: ${colors.htmlTags};">$&</span>`);
+
 };
 
 
@@ -86,7 +76,7 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
   const highlighterRef = useRef<HTMLDivElement>(null);
 
   const [scrollbarWidth, setScrollbarWidth] = useState(0);
-  const [cursorLine, setCursorLine] = useState(1);
+  const [cursorPosition, setCursorPosition] = useState(0);
 
   useLayoutEffect(() => {
     const editor = editorRef.current;
@@ -112,43 +102,21 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
     }
   };
 
-  const updateCursorPosition = () => {
-    const editor = editorRef.current;
-    if (editor) {
-      const line = editor.value.substring(0, editor.selectionStart).split('\\n').length;
-      setCursorLine(line);
+  const handleSelectionChange = () => {
+    if (editorRef.current) {
+      setCursorPosition(editorRef.current.selectionStart);
     }
   };
 
-  useEffect(() => {
-    const editor = editorRef.current;
-    if (editor) {
-      editor.addEventListener('keyup', updateCursorPosition);
-      editor.addEventListener('mouseup', updateCursorPosition);
-      editor.addEventListener('selectionchange', updateCursorPosition);
-
-      return () => {
-        editor.removeEventListener('keyup', updateCursorPosition);
-        editor.removeEventListener('mouseup', updateCursorPosition);
-        editor.removeEventListener('selectionchange', updateCursorPosition);
-      };
-    }
-  }, [editorRef.current]);
-
-  const handleCheckboxClick = (lineIndex: number, matchIndex: number) => {
+  const handleCheckboxClick = (lineIndex: number, charIndex: number) => {
     const lines = file.content.split('\\n');
     const line = lines[lineIndex];
-    let matchCount = 0;
-    const updatedLine = line.replace(/\\$check\\[( |x)\\]/g, (match) => {
-      if (matchCount === matchIndex) {
-        matchCount++;
-        return match === '$check[ ]' ? '$check[x]' : '$check[ ]';
-      }
-      matchCount++;
-      return match;
-    });
-
-    lines[lineIndex] = updatedLine;
+    
+    const isChecked = line.substring(charIndex, charIndex + 10) === '$check[x]';
+    const newCheck = isChecked ? '$check[ ]' : '$check[x]';
+    
+    lines[lineIndex] = line.substring(0, charIndex) + newCheck + line.substring(charIndex + 10);
+    
     onContentChange(lines.join('\\n'));
   };
 
@@ -159,26 +127,11 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
     const clickListener = (e: MouseEvent) => {
       const target = e.target as HTMLInputElement;
       if (target.tagName === 'INPUT' && target.type === 'checkbox' && target.parentElement) {
-        const lineElement = target.parentElement;
-        const lineIndex = parseInt(lineElement.getAttribute('data-line-index') || '0', 10);
-
-        const nodes = Array.from(lineElement.childNodes);
-        let checkboxIndex = -1;
-        let currentCheckbox = 0;
-
-        for (let i = 0; i < nodes.length; i++) {
-          const node = nodes[i] as HTMLElement;
-          if (node.tagName === 'INPUT' && node.getAttribute('type') === 'checkbox') {
-            if (node === target) {
-              checkboxIndex = currentCheckbox;
-              break;
-            }
-            currentCheckbox++;
-          }
-        }
-
-        if (checkboxIndex !== -1) {
-          handleCheckboxClick(lineIndex, checkboxIndex);
+        const lineIndex = parseInt(target.getAttribute('data-line-index') || '0', 10);
+        const charIndex = parseInt(target.getAttribute('data-char-index') || '0', 10);
+        
+        if (!isNaN(lineIndex) && !isNaN(charIndex)) {
+          handleCheckboxClick(lineIndex, charIndex);
         }
       }
     };
@@ -188,29 +141,36 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
     return () => {
       highlighter.removeEventListener('click', clickListener);
     };
-  }, [highlighterRef.current, handleCheckboxClick]);
+  }, [highlighterRef.current, file.content]);
 
-  const highlightedLines = useMemo(() => {
-    let text = file.content;
-    text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const blocks = text.split(/^(```[\\s\\S]*?```)/gm);
-    const processedLines: string[] = [];
-    blocks.forEach((block) => {
-      if (block.startsWith('```')) {
-        processedLines.push(`<span style="color: ${colors.code};">${block}</span>`);
-      } else {
-        const lines = block.split('\\n');
-        lines.forEach((line) => {
-          const globalLineIndex = processedLines.length;
-          processedLines.push(highlightLine(line, globalLineIndex + 1, cursorLine));
+  const highlightedContent = useMemo(() => {
+    const lines = file.content.split('\\n');
+    const cursorLineIndex = file.content.substring(0, cursorPosition).split('\\n').length - 1;
+
+    return lines.map((line, lineIndex) => {
+      let processedLine = line;
+
+      // Escape HTML entities first
+      processedLine = processedLine.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      // Apply markdown highlighting
+      processedLine = highlightLine(processedLine);
+
+      // Handle checkboxes, converting them to interactive elements
+      // unless the cursor is on the same line.
+      if (lineIndex !== cursorLineIndex) {
+        processedLine = processedLine.replace(/\\$check\\[( |x)\\]/g, (match, _, offset) => {
+          const isChecked = match === '$check[x]';
+          return `<input type="checkbox" ${isChecked ? 'checked' : ''} style="margin-right: 6px; transform: translateY(2px);" data-line-index="${lineIndex}" data-char-index="${offset}" />`;
         });
       }
+
+      return processedLine;
     });
-    return processedLines;
-  }, [file.content, cursorLine]);
+  }, [file.content, cursorPosition]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newContent = e.target.value.replace(/\\$check(?!\\u005b)/g, '$check[ ]');
+    const newContent = e.target.value.replace(/\\$check(?!\[)/g, '$check[ ]');
     onContentChange(newContent);
   };
 
@@ -318,6 +278,7 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
           onChange={handleContentChange}
           onScroll={handleEditorScroll}
           onKeyDown={handleKeyDown}
+          onSelect={handleSelectionChange}
           className="absolute inset-0 resize-none focus:outline-none bg-transparent text-transparent caret-text-primary w-full h-full z-10"
           style={{
             ...commonStyles,
@@ -342,11 +303,10 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
           }}
         >
           <code>
-            {highlightedLines.map((lineHtml, index) => (
+            {highlightedContent.map((lineHtml, index) => (
               <div
                 key={index}
                 className="code-line"
-                data-line-index={index}
                 dangerouslySetInnerHTML={{ __html: lineHtml || ' ' }}
               />
             ))}
