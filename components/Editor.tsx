@@ -1,4 +1,4 @@
-import React, { useRef, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useRef, useLayoutEffect, useMemo, useState, useEffect } from 'react';
 import Minimap from './Minimap';
 
 interface EditorProps {
@@ -10,7 +10,6 @@ interface EditorProps {
   onContentChange: (content: string) => void;
 }
 
-// Color palette provided by the user
 const colors = {
   headings: '#f0700e',
   bold: '#026654',
@@ -28,9 +27,6 @@ const colors = {
   htmlTags: '#d60068',
 };
 
-/**
- * A utility function to lighten a hex color.
- */
 const lightenColor = (hex: string, percent: number): string => {
   hex = hex.replace(/^#/, '');
   const r = parseInt(hex.substring(0, 2), 16);
@@ -50,27 +46,37 @@ const lightenColor = (hex: string, percent: number): string => {
   return `#${newR}${newG}${newB}`;
 };
 
-// Function to apply syntax highlighting rules to a single line of text
-const highlightLine = (line: string): string => {
+const highlightLine = (
+  line: string,
+  lineNumber: number,
+  cursorLine: number
+): string => {
+  if (lineNumber !== cursorLine && line.includes('$check')) {
+    return line.replace(/\\$check\\[( |x)\\]/g, (match) => {
+      const isChecked = match === '$check[x]';
+      return `<input type="checkbox" ${isChecked ? 'checked' : ''} style="margin-right: 6px; transform: translateY(2px);" />`;
+    });
+  }
+
   return line
-    .replace(/^(#{1,6})\s(.*)/g, (_, hashes: string, content: string) => {
+    .replace(/^(#{1,6})\\s(.*)/g, (_, hashes: string, content: string) => {
       const level = hashes.length;
       const color = lightenColor(colors.headings, (level - 1) * 15);
       return `<span style="color: ${color};">${hashes}</span> ${content}`;
     })
-    .replace(/^(\s*)(&gt;.*)/g, (_, indent: string, content: string) => {
+    .replace(/^(\\s*)(&gt;.*)/g, (_, indent: string, content: string) => {
         return `${indent}<span style="color: ${colors.blockquote};">${content}</span>`;
     })
-    .replace(/^(\s*)([\*\-\+]|\d+\.)\s/gm, (_, indent, marker) => `${indent}<span style="color: ${colors.lists};">${marker}</span> `)
-    .replace(/^(---|___|\*\*\*)$/gm, `<span style="color: ${colors.horizontalRules};">$&</span>`)
-    .replace(/!\[(.*?)\]\((.*?)\)/g, `<span style="color: ${colors.images.exclamationMark};">!</span><span style="color: ${colors.images.altText};">[</span><span style="color: ${colors.images.altText};">${'[$1]'}</span><span style="color: ${colors.images.altText};">]</span><span>($2)</span>`.replace('[$1]', '$1'))
-    .replace(/\[(.*?)\]\((.*?)\)/g, `<span style="color: ${colors.links};">[$1]($2)</span>`)
-    .replace(/(\*\*|__)(.*?)\1/g, `<span style="color: ${colors.bold}; font-weight: bold;">$1$2$1</span>`)
-    .replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, `<span style="color: ${colors.italic}; font-style: italic;">*S1*</span>`)
+    .replace(/^(\\s*)([\\*\\-\\+]|\\d+\\.)\\s/gm, (_, indent, marker) => `${indent}<span style="color: ${colors.lists};">${marker}</span> `)
+    .replace(/^(---|___|\\*\\*\\*)$/gm, `<span style="color: ${colors.horizontalRules};">$&</span>`)
+    .replace(/!\\[(.*?)\\]\\((.*?)\\)/g, `<span style="color: ${colors.images.exclamationMark};">!</span><span style="color: ${colors.images.altText};">[</span><span style="color: ${colors.images.altText};">${'[$1]'}</span><span style="color: ${colors.images.altText};">]</span><span>($2)</span>`.replace('[$1]', '$1'))
+    .replace(/\\[(.*?)\\]\\((.*?)\\)/g, `<span style="color: ${colors.links};">[$1]($2)</span>`)
+    .replace(/(\\*\\*|__)(.*?)\\1/g, `<span style="color: ${colors.bold}; font-weight: bold;">$1$2$1</span>`)
+    .replace(/(?<!\\*)\\*(?!\\*)(.*?)(?<!\\*)\\*(?!\\*)/g, `<span style="color: ${colors.italic}; font-style: italic;">*S1*</span>`)
     .replace(/_(.*?)_/g, `<span style="color: ${colors.italic}; font-style: italic;">_$1_</span>`)
     .replace(/~~(.*?)~~/g, `<span style="color: ${colors.strikethrough}; text-decoration: line-through;">~~$1~~</span>`)
     .replace(/`(.*?)`/g, `<span style="color: ${colors.code};"> \`$1\`</span>`)
-    .replace(/(&lt;\/?[\w\s="/.':;#-?&]+&gt;)/g, `<span style="color: ${colors.htmlTags};">$&</span>`);
+    .replace(/(<\\/?[\\w\\s="\\/.'\\:;#-?&]+>)/g, `<span style="color:${colors.htmlTags};">$&</span>`);
 };
 
 
@@ -80,13 +86,12 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
   const highlighterRef = useRef<HTMLDivElement>(null);
 
   const [scrollbarWidth, setScrollbarWidth] = useState(0);
+  const [cursorLine, setCursorLine] = useState(1);
 
-  // THE FIX: This layout effect now uses a ResizeObserver to watch the editor itself.
   useLayoutEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
 
-    // This function now runs whenever the editor's size changes.
     const updateLayoutSync = () => {
       const width = editor.offsetWidth - editor.clientWidth;
       setScrollbarWidth(width);
@@ -95,12 +100,10 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
     const observer = new ResizeObserver(updateLayoutSync);
     observer.observe(editor);
 
-    // Initial call to set the width on mount.
     updateLayoutSync();
 
-    // Clean up the observer when the component unmounts.
     return () => observer.disconnect();
-  }, []); // Empty dependency array is correct, as the observer handles updates.
+  }, []);
 
   const handleEditorScroll = () => {
     const scrollTop = editorRef.current?.scrollTop ?? 0;
@@ -109,24 +112,108 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
     }
   };
 
+  const updateCursorPosition = () => {
+    const editor = editorRef.current;
+    if (editor) {
+      const line = editor.value.substring(0, editor.selectionStart).split('\\n').length;
+      setCursorLine(line);
+    }
+  };
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (editor) {
+      editor.addEventListener('keyup', updateCursorPosition);
+      editor.addEventListener('mouseup', updateCursorPosition);
+      editor.addEventListener('selectionchange', updateCursorPosition);
+
+      return () => {
+        editor.removeEventListener('keyup', updateCursorPosition);
+        editor.removeEventListener('mouseup', updateCursorPosition);
+        editor.removeEventListener('selectionchange', updateCursorPosition);
+      };
+    }
+  }, [editorRef.current]);
+
+  const handleCheckboxClick = (lineIndex: number, matchIndex: number) => {
+    const lines = file.content.split('\\n');
+    const line = lines[lineIndex];
+    let matchCount = 0;
+    const updatedLine = line.replace(/\\$check\\[( |x)\\]/g, (match) => {
+      if (matchCount === matchIndex) {
+        matchCount++;
+        return match === '$check[ ]' ? '$check[x]' : '$check[ ]';
+      }
+      matchCount++;
+      return match;
+    });
+
+    lines[lineIndex] = updatedLine;
+    onContentChange(lines.join('\\n'));
+  };
+
+  useEffect(() => {
+    const highlighter = highlighterRef.current;
+    if (!highlighter) return;
+
+    const clickListener = (e: MouseEvent) => {
+      const target = e.target as HTMLInputElement;
+      if (target.tagName === 'INPUT' && target.type === 'checkbox' && target.parentElement) {
+        const lineElement = target.parentElement;
+        const lineIndex = parseInt(lineElement.getAttribute('data-line-index') || '0', 10);
+
+        const nodes = Array.from(lineElement.childNodes);
+        let checkboxIndex = -1;
+        let currentCheckbox = 0;
+
+        for (let i = 0; i < nodes.length; i++) {
+          const node = nodes[i] as HTMLElement;
+          if (node.tagName === 'INPUT' && node.getAttribute('type') === 'checkbox') {
+            if (node === target) {
+              checkboxIndex = currentCheckbox;
+              break;
+            }
+            currentCheckbox++;
+          }
+        }
+
+        if (checkboxIndex !== -1) {
+          handleCheckboxClick(lineIndex, checkboxIndex);
+        }
+      }
+    };
+
+    highlighter.addEventListener('click', clickListener);
+
+    return () => {
+      highlighter.removeEventListener('click', clickListener);
+    };
+  }, [highlighterRef.current, handleCheckboxClick]);
+
   const highlightedLines = useMemo(() => {
     let text = file.content;
     text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const blocks = text.split(/^(```[\s\S]*?```)/gm);
+    const blocks = text.split(/^(```[\\s\\S]*?```)/gm);
     const processedLines: string[] = [];
-    blocks.forEach(block => {
+    blocks.forEach((block) => {
       if (block.startsWith('```')) {
         processedLines.push(`<span style="color: ${colors.code};">${block}</span>`);
       } else {
-        const lines = block.split('\n');
-        lines.forEach(line => {
-          processedLines.push(highlightLine(line));
+        const lines = block.split('\\n');
+        lines.forEach((line) => {
+          const globalLineIndex = processedLines.length;
+          processedLines.push(highlightLine(line, globalLineIndex + 1, cursorLine));
         });
       }
     });
     return processedLines;
-  }, [file.content]);
-  
+  }, [file.content, cursorLine]);
+
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newContent = e.target.value.replace(/\\$check(?!\\u005b)/g, '$check[ ]');
+    onContentChange(newContent);
+  };
+
   const commonStyles: React.CSSProperties = {
     fontFamily: 'inherit',
     lineHeight: '1.5',
@@ -139,22 +226,20 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
     if (e.key === 'Tab' && editorRef.current) {
         e.preventDefault();
         const { selectionStart, selectionEnd, value } = editorRef.current;
-        const lines = value.substring(0, selectionStart).split('\n');
+        const lines = value.substring(0, selectionStart).split('\\n');
         const currentLineNumber = lines.length - 1;
         const selection = value.substring(selectionStart, selectionEnd);
-        const selectedLines = selection.split('\n');
+        const selectedLines = selection.split('\\n');
 
         if (selectedLines.length > 1) {
-            // Multi-line indent/un-indent
-            const allLines = value.split('\n');
+            const allLines = value.split('\\n');
             let newSelectionStart = selectionStart;
             let newSelectionEnd = selectionEnd;
 
             if (e.shiftKey) {
-                // Un-indent
                 for (let i = 0; i < selectedLines.length; i++) {
                     const lineIndex = currentLineNumber + i;
-                    if (allLines[lineIndex].startsWith('\t')) {
+                    if (allLines[lineIndex].startsWith('\\t')) {
                         allLines[lineIndex] = allLines[lineIndex].substring(1);
                         if (i === 0) newSelectionStart--;
                         newSelectionEnd--;
@@ -165,18 +250,16 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
                     }
                 }
             } else {
-                // Indent
                 for (let i = 0; i < selectedLines.length; i++) {
                     const lineIndex = currentLineNumber + i;
-                    allLines[lineIndex] = '\t' + allLines[lineIndex];
+                    allLines[lineIndex] = '\\t' + allLines[lineIndex];
                     if (i === 0) newSelectionStart++;
                     newSelectionEnd++;
                 }
             }
-            const newValue = allLines.join('\n');
+            const newValue = allLines.join('\\n');
             onContentChange(newValue);
 
-            // Restore selection
             setTimeout(() => {
                 if(editorRef.current) {
                     editorRef.current.selectionStart = newSelectionStart;
@@ -186,32 +269,29 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
 
         } else {
             if (e.shiftKey) {
-                // Single-line un-indent
-                const allLines = value.split('\n');
+                const allLines = value.split('\\n');
                 const lineIndex = currentLineNumber;
                 let newSelectionStart = selectionStart;
 
-                if (allLines[lineIndex] && allLines[lineIndex].startsWith('\t')) {
+                if (allLines[lineIndex] && allLines[lineIndex].startsWith('\\t')) {
                     allLines[lineIndex] = allLines[lineIndex].substring(1);
-                    newSelectionStart = Math.max(value.lastIndexOf('\n', selectionStart - 1) + 1, newSelectionStart - 1);
+                    newSelectionStart = Math.max(value.lastIndexOf('\\n', selectionStart - 1) + 1, newSelectionStart - 1);
                 } else if (allLines[lineIndex] && allLines[lineIndex].startsWith('  ')) {
                     allLines[lineIndex] = allLines[lineIndex].substring(2);
-                    newSelectionStart = Math.max(value.lastIndexOf('\n', selectionStart - 1) + 1, newSelectionStart - 2);
+                    newSelectionStart = Math.max(value.lastIndexOf('\\n', selectionStart - 1) + 1, newSelectionStart - 2);
                 }
-                const newValue = allLines.join('\n');
+                const newValue = allLines.join('\\n');
                 onContentChange(newValue);
 
-                // Restore selection
                 setTimeout(() => {
                     if(editorRef.current) {
                         editorRef.current.selectionStart = editorRef.current.selectionEnd = newSelectionStart;
                     }
                 }, 0);
             } else {
-                // Single-line indent
                 const newValue =
                     value.substring(0, selectionStart) +
-                    '\t' +
+                    '\\t' +
                     value.substring(selectionEnd);
                 onContentChange(newValue);
                 
@@ -235,7 +315,7 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
         <textarea
           ref={editorRef}
           value={file.content}
-          onChange={(e) => onContentChange(e.target.value)}
+          onChange={handleContentChange}
           onScroll={handleEditorScroll}
           onKeyDown={handleKeyDown}
           className="absolute inset-0 resize-none focus:outline-none bg-transparent text-transparent caret-text-primary w-full h-full z-10"
@@ -266,6 +346,7 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
               <div
                 key={index}
                 className="code-line"
+                data-line-index={index}
                 dangerouslySetInnerHTML={{ __html: lineHtml || ' ' }}
               />
             ))}
