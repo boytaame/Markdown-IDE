@@ -185,18 +185,42 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
             }, 0);
 
         } else {
-            // Single-line indent
-            const newValue =
-                value.substring(0, selectionStart) +
-                '\t' +
-                value.substring(selectionEnd);
-            onContentChange(newValue);
-            
-            setTimeout(() => {
-                if(editorRef.current) {
-                    editorRef.current.selectionStart = editorRef.current.selectionEnd = selectionStart + 1;
+            if (e.shiftKey) {
+                // Single-line un-indent
+                const allLines = value.split('\n');
+                const lineIndex = currentLineNumber;
+                let newSelectionStart = selectionStart;
+
+                if (allLines[lineIndex] && allLines[lineIndex].startsWith('\t')) {
+                    allLines[lineIndex] = allLines[lineIndex].substring(1);
+                    newSelectionStart = Math.max(value.lastIndexOf('\n', selectionStart - 1) + 1, newSelectionStart - 1);
+                } else if (allLines[lineIndex] && allLines[lineIndex].startsWith('  ')) {
+                    allLines[lineIndex] = allLines[lineIndex].substring(2);
+                    newSelectionStart = Math.max(value.lastIndexOf('\n', selectionStart - 1) + 1, newSelectionStart - 2);
                 }
-            }, 0);
+                const newValue = allLines.join('\n');
+                onContentChange(newValue);
+
+                // Restore selection
+                setTimeout(() => {
+                    if(editorRef.current) {
+                        editorRef.current.selectionStart = editorRef.current.selectionEnd = newSelectionStart;
+                    }
+                }, 0);
+            } else {
+                // Single-line indent
+                const newValue =
+                    value.substring(0, selectionStart) +
+                    '\t' +
+                    value.substring(selectionEnd);
+                onContentChange(newValue);
+                
+                setTimeout(() => {
+                    if(editorRef.current) {
+                        editorRef.current.selectionStart = editorRef.current.selectionEnd = selectionStart + 1;
+                    }
+                }, 0);
+            }
         }
     }
   };
