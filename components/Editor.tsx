@@ -48,25 +48,24 @@ const lightenColor = (hex: string, percent: number): string => {
 
 const highlightLine = (line: string): string => {
   return line
-    .replace(/^(#{1,6})\\s(.*)/g, (_, hashes: string, content: string) => {
+    .replace(/(<\/?[a-zA-Z][\w\s="'\/.:;#-]*>)/g,  `<span style="color: ${colors.htmlTags};">$&</span>`)
+    .replace(/^(#{1,6})\s(.*)/g, (_, hashes: string, content: string) => {
       const level = hashes.length;
       const color = lightenColor(colors.headings, (level - 1) * 15);
       return `<span style="color: ${color};">${hashes}</span> ${content}`;
     })
-    .replace(/^(\\s*)(&gt;.*)/g, (_, indent: string, content: string) => {
+    .replace(/^(\s*)(&gt;.*)/g, (_, indent: string, content: string) => {
         return `${indent}<span style="color: ${colors.blockquote};">${content}</span>`;
     })
-    .replace(/^(\\s*)([\\*\\-\\+]|\\d+\\.)\\s/gm, (_, indent, marker) => `${indent}<span style="color: ${colors.lists};">${marker}</span> `)
-    .replace(/^(---|___|\\*\\*\\*)$/gm, `<span style="color: ${colors.horizontalRules};">$&</span>`)
-    .replace(/!\\\[(.*?)\\\]\\\((.*?)\\\)/g, `<span style="color: ${colors.images.exclamationMark};">!</span><span style="color: ${colors.images.altText};">[</span>$1<span style="color: ${colors.images.altText};">]</span><span>($2)</span>`)
-    .replace(/\\\[(.*?)\\\]\\\((.*?)\\\)/g, `<span style="color: ${colors.links};">[$1]($2)</span>`)
-    .replace(/(\\*\\*|__)(.*?)\\1/g, `<span style="color: ${colors.bold}; font-weight: bold;">$1$2$1</span>`)
-    .replace(/(?<!\\*)\\*(?!\\*)(.*?)(?<!\\*)\\*(?!\\*)/g, `<span style="color: ${colors.italic}; font-style: italic;">*$1*</span>`)
+    .replace(/^(\s*)([\*\-\+]|\d+\.)\s/gm, (_, indent, marker) => `${indent}<span style="color: ${colors.lists};">${marker}</span> `)
+    .replace(/^(---|___|\*\*\*)$/gm, `<span style="color: ${colors.horizontalRules};">$&</span>`)
+    .replace(/!\[(.*?)\]\((.*?)\)/g, `<span style="color: ${colors.images.exclamationMark};">!</span><span style="color: ${colors.images.altText};">[</span>$1<span style="color: ${colors.images.altText};">]</span><span>($2)</span>`)
+    .replace(/\[(.*?)\]\((.*?)\)/g, `<span style="color: ${colors.links};">[$1]($2)</span>`)
+    .replace(/(\*\*|__)(.*?)\1/g, `<span style="color: ${colors.bold}; font-weight: bold;">$1$2$1</span>`)
+    .replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, `<span style="color: ${colors.italic}; font-style: italic;">*$1*</span>`)
     .replace(/_(.*?)_/g, `<span style="color: ${colors.italic}; font-style: italic;">_$1_</span>`)
     .replace(/~~(.*?)~~/g, `<span style="color: ${colors.strikethrough}; text-decoration: line-through;">~~$1~~</span>`)
-    .replace(/\\`(.*?)\\`/g, `<span style="color: ${colors.code};"> \`$1\`</span>`)
-    .replace(/(<\/?[a-zA-Z][\w\s="'\/.:;#-]*>)/g,`<span style="color: ${colors.htmlTags};">$&</span>`);
-
+    .replace(/`(.*?)`/g, `<span style="color: ${colors.code};"> \`$1\`</span>`);
 };
 
 
@@ -109,15 +108,15 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
   };
 
   const handleCheckboxClick = (lineIndex: number, charIndex: number) => {
-    const lines = file.content.split('\\n');
+    const lines = file.content.split('\n');
     const line = lines[lineIndex];
     
-    const isChecked = line.substring(charIndex, charIndex + 10) === '$check[x]';
+    const isChecked = line.substring(charIndex, charIndex + 9) === '$check[x]';
     const newCheck = isChecked ? '$check[ ]' : '$check[x]';
     
-    lines[lineIndex] = line.substring(0, charIndex) + newCheck + line.substring(charIndex + 10);
+    lines[lineIndex] = line.substring(0, charIndex) + newCheck + line.substring(charIndex + 9);
     
-    onContentChange(lines.join('\\n'));
+    onContentChange(lines.join('\n'));
   };
 
   useEffect(() => {
@@ -125,52 +124,57 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
     if (!highlighter) return;
 
     const clickListener = (e: MouseEvent) => {
-      const target = e.target as HTMLInputElement;
-      if (target.tagName === 'INPUT' && target.type === 'checkbox' && target.parentElement) {
-        const lineIndex = parseInt(target.getAttribute('data-line-index') || '0', 10);
-        const charIndex = parseInt(target.getAttribute('data-char-index') || '0', 10);
-        
-        if (!isNaN(lineIndex) && !isNaN(charIndex)) {
-          handleCheckboxClick(lineIndex, charIndex);
+        const target = e.target as HTMLElement;
+        if (target.classList.contains('custom-checkbox')) {
+            e.preventDefault();
+            e.stopPropagation();
+            const lineIndex = parseInt(target.getAttribute('data-line-index') || '0', 10);
+            const charIndex = parseInt(target.getAttribute('data-char-index') || '0', 10);
+            
+            if (!isNaN(lineIndex) && !isNaN(charIndex)) {
+              handleCheckboxClick(lineIndex, charIndex);
+            }
         }
-      }
     };
 
-    highlighter.addEventListener('click', clickListener);
+    highlighter.addEventListener('mousedown', clickListener as EventListener);
 
     return () => {
-      highlighter.removeEventListener('click', clickListener);
+      highlighter.removeEventListener('mousedown', clickListener as EventListener);
     };
   }, [highlighterRef.current, file.content]);
 
   const highlightedContent = useMemo(() => {
-    const lines = file.content.split('\\n');
-    const cursorLineIndex = file.content.substring(0, cursorPosition).split('\\n').length - 1;
+    const lines = file.content.split('\n');
+    let charCounter = 0;
 
     return lines.map((line, lineIndex) => {
-      let processedLine = line;
+      const lineStartPos = charCounter;
+      let processedLine = highlightLine(line);
 
-      // Escape HTML entities first
-      processedLine = processedLine.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      processedLine = processedLine.replace(/\$check\[( |x)\]/g, (match, _, offset) => {
+        const isChecked = match === '$check[x]';
+        const checkedClass = isChecked ? 'checked' : '';
+        const checkboxStartPos = lineStartPos + offset;
+        const checkboxEndPos = checkboxStartPos + 9;
 
-      // Apply markdown highlighting
-      processedLine = highlightLine(processedLine);
-
-      // Handle checkboxes, converting them to interactive elements
-      // unless the cursor is on the same line.
-      if (lineIndex !== cursorLineIndex) {
-        processedLine = processedLine.replace(/\\$check\\[( |x)\\]/g, (match, _, offset) => {
-          const isChecked = match === '$check[x]';
-          return `<input type="checkbox" ${isChecked ? 'checked' : ''} style="margin-right: 6px; transform: translateY(2px);" data-line-index="${lineIndex}" data-char-index="${offset}" />`;
-        });
-      }
-
+        if (cursorPosition >= checkboxStartPos && cursorPosition < checkboxEndPos) {
+          return match;
+        }
+        
+        return `<span class="checkbox-container">` +
+               `<span class="custom-checkbox ${checkedClass}" data-line-index="${lineIndex}" data-char-index="${offset}"></span>` +
+               `<span class="hidden-syntax">${match}</span>` +
+               `</span>`;
+      });
+      
+      charCounter += line.length + 1;
       return processedLine;
     });
   }, [file.content, cursorPosition]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newContent = e.target.value.replace(/\\$check(?!\[)/g, '$check[ ]');
+    const newContent = e.target.value.replace(/\$check(?!\[)/g, '$check[ ]');
     onContentChange(newContent);
   };
 
@@ -183,83 +187,142 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Tab' && editorRef.current) {
-        e.preventDefault();
+    if (editorRef.current) {
         const { selectionStart, selectionEnd, value } = editorRef.current;
-        const lines = value.substring(0, selectionStart).split('\\n');
-        const currentLineNumber = lines.length - 1;
-        const selection = value.substring(selectionStart, selectionEnd);
-        const selectedLines = selection.split('\\n');
 
-        if (selectedLines.length > 1) {
-            const allLines = value.split('\\n');
-            let newSelectionStart = selectionStart;
-            let newSelectionEnd = selectionEnd;
-
-            if (e.shiftKey) {
-                for (let i = 0; i < selectedLines.length; i++) {
-                    const lineIndex = currentLineNumber + i;
-                    if (allLines[lineIndex].startsWith('\\t')) {
-                        allLines[lineIndex] = allLines[lineIndex].substring(1);
-                        if (i === 0) newSelectionStart--;
-                        newSelectionEnd--;
-                    } else if (allLines[lineIndex].startsWith('  ')) {
-                        allLines[lineIndex] = allLines[lineIndex].substring(2);
-                        if (i === 0) newSelectionStart -= 2;
-                        newSelectionEnd -= 2;
-                    }
-                }
-            } else {
-                for (let i = 0; i < selectedLines.length; i++) {
-                    const lineIndex = currentLineNumber + i;
-                    allLines[lineIndex] = '\\t' + allLines[lineIndex];
-                    if (i === 0) newSelectionStart++;
-                    newSelectionEnd++;
-                }
-            }
-            const newValue = allLines.join('\\n');
+        if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'b') {
+            e.preventDefault();
+            const now = new Date();
+            const date = now.toLocaleDateString();
+            const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const dateTime = `${date} ${time}`;
+            const newValue =
+                value.substring(0, selectionStart) +
+                dateTime +
+                value.substring(selectionEnd);
             onContentChange(newValue);
-
             setTimeout(() => {
-                if(editorRef.current) {
-                    editorRef.current.selectionStart = newSelectionStart;
-                    editorRef.current.selectionEnd = newSelectionEnd;
+                if (editorRef.current) {
+                    const newCursorPos = selectionStart + dateTime.length;
+                    editorRef.current.selectionStart = newCursorPos;
+                    editorRef.current.selectionEnd = newCursorPos;
                 }
             }, 0);
+            return;
+        }
 
-        } else {
-            if (e.shiftKey) {
-                const allLines = value.split('\\n');
-                const lineIndex = currentLineNumber;
+        if (e.key === 'Backspace' && selectionStart === selectionEnd) {
+            const textBeforeCursor = value.substring(0, selectionStart);
+            const checkboxRegex = /\$check\[( |x)\]$/;
+            if (checkboxRegex.test(textBeforeCursor)) {
+                e.preventDefault();
+                const newContent = textBeforeCursor.replace(checkboxRegex, '') + value.substring(selectionStart);
+                onContentChange(newContent);
+                setTimeout(() => {
+                    if (editorRef.current) {
+                        const newCursorPos = selectionStart - 9;
+                        editorRef.current.selectionStart = newCursorPos;
+                        editorRef.current.selectionEnd = newCursorPos;
+                    }
+                }, 0);
+                return;
+            }
+        }
+
+        if (e.key === 'Delete' && selectionStart === selectionEnd) {
+            const textAfterCursor = value.substring(selectionStart);
+            const checkboxRegex = /^\$check\[( |x)\]/;
+            if (checkboxRegex.test(textAfterCursor)) {
+                e.preventDefault();
+                const newContent = value.substring(0, selectionStart) + textAfterCursor.replace(checkboxRegex, '');
+                onContentChange(newContent);
+                setTimeout(() => {
+                    if (editorRef.current) {
+                        editorRef.current.selectionStart = selectionStart;
+                        editorRef.current.selectionEnd = selectionStart;
+                    }
+                }, 0);
+                return;
+            }
+        }
+
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const lines = value.substring(0, selectionStart).split('\n');
+            const currentLineNumber = lines.length - 1;
+            const selection = value.substring(selectionStart, selectionEnd);
+            const selectedLines = selection.split('\n');
+
+            if (selectedLines.length > 1) {
+                const allLines = value.split('\n');
                 let newSelectionStart = selectionStart;
+                let newSelectionEnd = selectionEnd;
 
-                if (allLines[lineIndex] && allLines[lineIndex].startsWith('\\t')) {
-                    allLines[lineIndex] = allLines[lineIndex].substring(1);
-                    newSelectionStart = Math.max(value.lastIndexOf('\\n', selectionStart - 1) + 1, newSelectionStart - 1);
-                } else if (allLines[lineIndex] && allLines[lineIndex].startsWith('  ')) {
-                    allLines[lineIndex] = allLines[lineIndex].substring(2);
-                    newSelectionStart = Math.max(value.lastIndexOf('\\n', selectionStart - 1) + 1, newSelectionStart - 2);
+                if (e.shiftKey) {
+                    for (let i = 0; i < selectedLines.length; i++) {
+                        const lineIndex = currentLineNumber + i;
+                        if (allLines[lineIndex].startsWith('\t')) {
+                            allLines[lineIndex] = allLines[lineIndex].substring(1);
+                            if (i === 0) newSelectionStart--;
+                            newSelectionEnd--;
+                        } else if (allLines[lineIndex].startsWith('  ')) {
+                            allLines[lineIndex] = allLines[lineIndex].substring(2);
+                            if (i === 0) newSelectionStart -= 2;
+                            newSelectionEnd -= 2;
+                        }
+                    }
+                } else {
+                    for (let i = 0; i < selectedLines.length; i++) {
+                        const lineIndex = currentLineNumber + i;
+                        allLines[lineIndex] = '\t' + allLines[lineIndex];
+                        if (i === 0) newSelectionStart++;
+                        newSelectionEnd++;
+                    }
                 }
-                const newValue = allLines.join('\\n');
+                const newValue = allLines.join('\n');
                 onContentChange(newValue);
 
                 setTimeout(() => {
                     if(editorRef.current) {
-                        editorRef.current.selectionStart = editorRef.current.selectionEnd = newSelectionStart;
+                        editorRef.current.selectionStart = newSelectionStart;
+                        editorRef.current.selectionEnd = newSelectionEnd;
                     }
                 }, 0);
+
             } else {
-                const newValue =
-                    value.substring(0, selectionStart) +
-                    '\\t' +
-                    value.substring(selectionEnd);
-                onContentChange(newValue);
-                
-                setTimeout(() => {
-                    if(editorRef.current) {
-                        editorRef.current.selectionStart = editorRef.current.selectionEnd = selectionStart + 1;
+                if (e.shiftKey) {
+                    const allLines = value.split('\n');
+                    const lineIndex = currentLineNumber;
+                    let newSelectionStart = selectionStart;
+
+                    if (allLines[lineIndex] && allLines[lineIndex].startsWith('\t')) {
+                        allLines[lineIndex] = allLines[lineIndex].substring(1);
+                        newSelectionStart = Math.max(value.lastIndexOf('\n', selectionStart - 1) + 1, newSelectionStart - 1);
+                    } else if (allLines[lineIndex] && allLines[lineIndex].startsWith('  ')) {
+                        allLines[lineIndex] = allLines[lineIndex].substring(2);
+                        newSelectionStart = Math.max(value.lastIndexOf('\n', selectionStart - 1) + 1, newSelectionStart - 2);
                     }
-                }, 0);
+                    const newValue = allLines.join('\n');
+                    onContentChange(newValue);
+
+                    setTimeout(() => {
+                        if(editorRef.current) {
+                            editorRef.current.selectionStart = editorRef.current.selectionEnd = newSelectionStart;
+                        }
+                    }, 0);
+                } else {
+                    const newValue =
+                        value.substring(0, selectionStart) +
+                        '\t' +
+                        value.substring(selectionEnd);
+                    onContentChange(newValue);
+                    
+                    setTimeout(() => {
+                        if(editorRef.current) {
+                            editorRef.current.selectionStart = editorRef.current.selectionEnd = selectionStart + 1;
+                        }
+                    }, 0);
+                }
             }
         }
     }
@@ -279,7 +342,7 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
           onScroll={handleEditorScroll}
           onKeyDown={handleKeyDown}
           onSelect={handleSelectionChange}
-          className="absolute inset-0 resize-none focus:outline-none bg-transparent text-transparent caret-text-primary w-full h-full z-10"
+          className="absolute inset-0 resize-none focus:outline-none bg-transparent text-transparent caret-text-primary w-full h-full z-0"
           style={{
             ...commonStyles,
             paddingLeft: `calc(${GUTTER_WIDTH} + ${CODE_PADDING_LEFT})`,
@@ -294,7 +357,7 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
         <pre
           ref={highlighterRef}
           aria-hidden="true"
-          className="code-view absolute inset-0 resize-none focus:outline-none overflow-hidden text-text-primary w-full h-full pointer-events-none"
+          className="code-view absolute inset-0 resize-none focus:outline-none overflow-hidden text-text-primary w-full h-full pointer-events-none z-10"
           style={{
             ...commonStyles,
             paddingTop: '1rem',
@@ -335,6 +398,39 @@ const Editor: React.FC<EditorProps> = ({ file, onContentChange }) => {
           text-align: right;
           color: rgba(192, 202, 245, 0.3);
           user-select: none;
+        }
+        .checkbox-container {
+            position: relative;
+            display: inline-block;
+        }
+        .hidden-syntax {
+            visibility: hidden;
+        }
+        .custom-checkbox {
+            position: absolute;
+            left: 0;
+            top: 3px;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #a9b1d6;
+            border-radius: 4px;
+            cursor: pointer;
+            pointer-events: auto;
+        }
+        .custom-checkbox.checked {
+            background-color: #7aa2f7;
+            border-color: #7aa2f7;
+        }
+        .custom-checkbox.checked::after {
+            content: '';
+            position: absolute;
+            left: 4px;
+            top: 0px;
+            width: 5px;
+            height: 10px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
         }
       `}</style>
 
