@@ -1,118 +1,62 @@
-import React, { useState, DragEvent } from 'react';
+import React, { DragEvent, useRef } from 'react';
 import Tab from './Tab';
-import { MarkdownFile } from '../types';
+import { File } from '../types'; // Changed MarkdownFile to File
 
 interface TabsProps {
-  openFiles: MarkdownFile[];
-  activeFileId: string | null;
-  onSelectFile: (id: string) => void;
-  onCloseFile: (id: string) => void;
+  openFiles: File[];
+  activeFile: File | null; // Changed activeFileId to activeFile
+  onTabClick: (file: File) => void; // Changed onSelectFile to onTabClick and id to file
+  onCloseTab: (id: string) => void;
   onReorderTabs: (reorderedIds: string[]) => void;
 }
 
-const Tabs: React.FC<TabsProps> = ({ openFiles, activeFileId, onSelectFile, onCloseFile, onReorderTabs }) => {
-  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
-  const [dropIndicator, setDropIndicator] = useState<{ fileId: string; position: 'left' | 'right' } | null>(null);
+const Tabs: React.FC<TabsProps> = ({ openFiles, activeFile, onTabClick, onCloseTab, onReorderTabs }) => {
+  const draggedTabId = useRef<string | null>(null);
+  const tabsContainerRef = useRef<HTMLDivElement>(null);
 
   const handleDragStart = (e: DragEvent<HTMLDivElement>, id: string) => {
-    setDraggedTabId(id);
+    draggedTabId.current = id;
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDragOver = (e: DragEvent<HTMLDivElement>, id: string) => {
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (id === draggedTabId) {
-      setDropIndicator(null);
-      return;
-    }
-    const rect = e.currentTarget.getBoundingClientRect();
-    const mid = rect.left + rect.width / 2;
-    if (e.clientX < mid) {
-      setDropIndicator({ fileId: id, position: 'left' });
-    } else {
-      setDropIndicator({ fileId: id, position: 'right' });
-    }
   };
 
-  const handleDrop = () => {
-    if (draggedTabId && dropIndicator) {
-      const { fileId: targetId, position } = dropIndicator;
-      if (draggedTabId === targetId) {
-          setDraggedTabId(null);
-          setDropIndicator(null);
-          return;
-      }
-      
-      const reorderedIds = openFiles.map(f => f.id);
-      const draggedIndex = reorderedIds.indexOf(draggedTabId);
-      reorderedIds.splice(draggedIndex, 1);
-      
-      const targetIndex = reorderedIds.indexOf(targetId);
+  const handleDrop = (e: DragEvent<HTMLDivElement>, dropTargetId: string) => {
+    e.preventDefault();
+    if (!draggedTabId.current || draggedTabId.current === dropTargetId) return;
 
-      if (position === 'left') {
-        reorderedIds.splice(targetIndex, 0, draggedTabId);
-      } else {
-        reorderedIds.splice(targetIndex + 1, 0, draggedTabId);
-      }
-      onReorderTabs(reorderedIds);
-    }
-    setDraggedTabId(null);
-    setDropIndicator(null);
-  };
+    const reorderedFiles = [...openFiles];
+    const draggedIndex = reorderedFiles.findIndex(f => f.id === draggedTabId.current);
+    const targetIndex = reorderedFiles.findIndex(f => f.id === dropTargetId);
 
-  const handleDragEnd = () => {
-    setDraggedTabId(null);
-    setDropIndicator(null);
+    const [draggedItem] = reorderedFiles.splice(draggedIndex, 1);
+    reorderedFiles.splice(targetIndex, 0, draggedItem);
+
+    onReorderTabs(reorderedFiles.map(f => f.id));
+    draggedTabId.current = null;
   };
 
   return (
-    <>
-      <div 
-        className="flex bg-primary border-b border-gray-700 overflow-x-auto tabs-container"
-        onDrop={handleDrop}
-        onDragEnd={handleDragEnd}
-        onDragLeave={() => setDropIndicator(null)}
-      >
-        {openFiles.map(file => (
+    <div ref={tabsContainerRef} className="flex bg-secondary border-b border-accent/20 overflow-x-auto">
+      {openFiles.map(file => (
+        <div
+          key={file.id}
+          draggable
+          onDragStart={(e) => handleDragStart(e, file.id)}
+          onDragOver={handleDragOver}
+          onDrop={(e) => handleDrop(e, file.id)}
+        >
           <Tab
-            key={file.id}
-            id={file.id}
-            fileName={file.name}
-            isActive={file.id === activeFileId}
-            onClick={() => onSelectFile(file.id)}
-            onClose={() => onCloseFile(file.id)}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            isDragging={file.id === draggedTabId}
-            dropIndicator={dropIndicator?.fileId === file.id ? dropIndicator.position : null}
+            file={file}
+            isActive={activeFile?.id === file.id}
+            onSelect={() => onTabClick(file)}
+            onClose={() => onCloseTab(file.id)}
           />
-        ))}
-      </div>
-      <style>{`
-        .tabs-container::-webkit-scrollbar {
-          height: 2px; /* Thinner scrollbar */
-        }
-
-        .tabs-container::-webkit-scrollbar-track {
-          background: transparent;
-        }
-
-        .tabs-container::-webkit-scrollbar-thumb {
-          background-color: #7aa2f7;
-          border-radius: 2px;
-        }
-
-        /* Explicitly hide scrollbar buttons (arrows) */
-        .tabs-container::-webkit-scrollbar-button {
-            display: none;
-        }
-        
-        .tabs-container {
-            scrollbar-width: thin;
-            scrollbar-color: #7aa2f7 transparent;
-        }
-      `}</style>
-    </>
+        </div>
+      ))}
+    </div>
   );
 };
 

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { MarkdownFile } from '../types';
+import { File } from '../types';
 import FileExplorer from './FileExplorer';
 import Editor from './Editor';
 import Preview from './Preview';
@@ -12,7 +12,7 @@ const MIN_SIDEBAR_WIDTH = 200; // Minimum width for the sidebar
 const MAX_SIDEBAR_WIDTH = 500; // Maximum width for the sidebar
 
 type PersistedState = {
-  files: MarkdownFile[];
+  files: File[];
   openFileIds: string[];
   activeFileId: string | null;
   sidebarWidth?: number;
@@ -20,7 +20,7 @@ type PersistedState = {
 };
 
 const IdeInterface: React.FC = () => {
-  const [files, setFiles] = useState<MarkdownFile[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
   const [openFileIds, setOpenFileIds] = useState<string[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
@@ -29,7 +29,7 @@ const IdeInterface: React.FC = () => {
   const [sidebarVisible, setSidebarVisible] = useState(true); 
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  const openFiles = openFileIds.map(id => files.find(f => f.id === id)).filter((f): f is MarkdownFile => !!f);
+  const openFiles = openFileIds.map(id => files.find(f => f.id === id)).filter((f): f is File => !!f);
   const activeFile = files.find(file => file.id === activeFileId);
 
   useEffect(() => {
@@ -38,7 +38,7 @@ const IdeInterface: React.FC = () => {
       if (raw) {
         const parsed: PersistedState = JSON.parse(raw);
         if (Array.isArray(parsed.files) && parsed.files.length > 0) {
-          const loadedFiles = parsed.files.map(f => ({ ...f, pinned: f.pinned ?? false }));
+          const loadedFiles = parsed.files.map(f => ({ ...f, isPinned: f.isPinned ?? false }));
           setFiles(loadedFiles);
           const fileIds = loadedFiles.map(f => f.id);
           const validOpenFileIds = parsed.openFileIds?.filter(id => fileIds.includes(id)) ?? [];
@@ -52,11 +52,11 @@ const IdeInterface: React.FC = () => {
     } catch (_) {
       // Fallback to default state
     }
-    const defaultFile: MarkdownFile = {
+    const defaultFile: File = {
       id: '1',
       name: 'welcome.md',
       content: '# Welcome to your Markdown IDE!\n\nStart typing...\n',
-      pinned: false,
+      isPinned: false,
     };
     setFiles([defaultFile]);
     setOpenFileIds([defaultFile.id]);
@@ -132,11 +132,11 @@ const IdeInterface: React.FC = () => {
     );
   }, [activeFileId]);
 
-  const handleSelectFile = (id: string) => {
-    if (!openFileIds.includes(id)) {
-      setOpenFileIds(prev => [...prev, id]);
+  const handleSelectFile = (file: File) => {
+    if (!openFileIds.includes(file.id)) {
+      setOpenFileIds(prev => [...prev, file.id]);
     }
-    setActiveFileId(id);
+    setActiveFileId(file.id);
   };
 
   const handleCloseFile = (id: string) => {
@@ -150,14 +150,14 @@ const IdeInterface: React.FC = () => {
 
   const handleCreateFile = () => {
     const newFileName = `new-file-${files.length + 1}.md`;
-    const newFile: MarkdownFile = {
+    const newFile: File = {
       id: uuidv4(),
       name: newFileName,
       content: `# ${newFileName}\n`,
-      pinned: false,
+      isPinned: false,
     };
     setFiles(prevFiles => [...prevFiles, newFile]);
-    handleSelectFile(newFile.id);
+    handleSelectFile(newFile);
   };
 
   const handleImportFile = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -166,14 +166,14 @@ const IdeInterface: React.FC = () => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const content = e.target?.result as string;
-        const newFile: MarkdownFile = {
+        const newFile: File = {
           id: uuidv4(),
           name: file.name,
           content,
-          pinned: false,
+          isPinned: false,
         };
         setFiles(prevFiles => [...prevFiles, newFile]);
-        handleSelectFile(newFile.id);
+        handleSelectFile(newFile);
       };
       reader.readAsText(file);
     } else {
@@ -209,7 +209,7 @@ const IdeInterface: React.FC = () => {
     );
   };
 
-  const handleReorderFiles = (reorderedFiles: MarkdownFile[]) => {
+  const handleReorderFiles = (reorderedFiles: File[]) => {
     setFiles(reorderedFiles);
   };
 
@@ -219,7 +219,7 @@ const IdeInterface: React.FC = () => {
 
   const handleTogglePin = (fileId: string) => {
     setFiles(prevFiles =>
-      prevFiles.map(f => (f.id === fileId ? { ...f, pinned: !f.pinned } : f))
+      prevFiles.map(f => (f.id === fileId ? { ...f, isPinned: !f.isPinned } : f))
     );
   };
 
@@ -255,7 +255,7 @@ const IdeInterface: React.FC = () => {
   return (
     <div className="flex flex-col h-screen font-mono bg-primary">
       <Toolbar 
-        onCreateFile={handleCreateFile}
+        onNewFile={handleCreateFile}
         onImportFile={handleImportFile}
         onSaveFile={handleSaveFile}
         onTogglePreview={() => setIsPreviewVisible(!isPreviewVisible)}
@@ -267,12 +267,21 @@ const IdeInterface: React.FC = () => {
           <div ref={sidebarRef} style={{ width: sidebarWidth }} className="flex-shrink-0">
             <FileExplorer 
               files={files} 
-              activeFileId={activeFileId} 
-              onSelectFile={handleSelectFile}
+              activeFile={activeFile}
+              onFileClick={handleSelectFile}
               onDeleteFile={handleDeleteFile}
               onRenameFile={handleRenameFile}
               onReorderFiles={handleReorderFiles}
               onTogglePin={handleTogglePin}
+              // Grouping related props will be passed from App.tsx
+              groups={[]} // Placeholder for groups
+              selectedFiles={new Set()} // Placeholder for selectedFiles
+              onNewFile={handleCreateFile} // Placeholder for onNewFile
+              onNewGroupRequest={() => {}} // Placeholder
+              onRemoveFromGroup={() => {}} // Placeholder
+              onToggleGroup={() => {}} // Placeholder
+              onDragEnd={() => {}} // Placeholder
+              onFileSelect={() => {}} // Placeholder
             />
           </div>
         )}
@@ -280,9 +289,9 @@ const IdeInterface: React.FC = () => {
         <div className="flex-1 flex flex-col bg-gray-700 overflow-hidden">
           <Tabs
             openFiles={openFiles}
-            activeFileId={activeFileId}
-            onSelectFile={setActiveFileId}
-            onCloseFile={handleCloseFile}
+            activeFile={activeFile}
+            onTabClick={handleSelectFile}
+            onCloseTab={handleCloseFile}
             onReorderTabs={handleReorderTabs}
           />
           {activeFile ? (

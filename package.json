@@ -10,10 +10,13 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.8.0",
+    "@types/react-beautiful-dnd": "^13.1.8",
     "firebase-admin": "^13.5.0",
     "google-auth-library": "^10.3.0",
     "prismjs": "^1.30.0",
     "react": "^19.1.1",
+    "react-beautiful-dnd": "^13.1.1",
     "react-dom": "^19.1.1",
     "react-markdown": "^10.1.0",
     "react-simple-code-editor": "^0.14.1",
